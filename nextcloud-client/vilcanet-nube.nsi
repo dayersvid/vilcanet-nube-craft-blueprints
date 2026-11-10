@@ -89,6 +89,7 @@ Var StartMenuFolder
 
 Var ProcessList
 Var VilcanetCfgDir
+Var VilcanetInstalacionNueva
 
 !macro VilcanetCerrarProcesos root
     nsExec::ExecToLog '${VilcanetPowerShell} "&{ Get-Process * | Where-Object { $$_.Path -Like (Join-Path \"${root}\" *) } |  %{ Write-Host \"cerrando\", $$_.Path; Stop-Process $$_ } }"'
@@ -123,22 +124,54 @@ end_kill:
 ; Escriben en HKLM y HKCR: solo se registran en la instalacion para todos los usuarios.
 
 ; --- Idioma del programa -------------------------------------------------------------------------
-; El instalador pregunta el idioma y lo deja en el archivo de configuracion del programa
-; ([General] language), para que la primera pantalla ya salga en ese idioma.
-; Hay que escribir en el perfil de la persona que esta sentada al PC, y no vale $APPDATA a secas:
+; Solo en una instalacion NUEVA el instalador pregunta el idioma y lo deja en el archivo de
+; configuracion del programa ([General] language), para que la primera pantalla ya salga en ese
+; idioma. En una actualizacion no pregunta ni escribe: se respeta lo que la persona tenga elegido,
+; tambien "Automatico" (sin clave language).
+;
+; Hay que mirar el perfil de la persona que esta sentada al PC, y no vale $APPDATA a secas:
 ;   - instalando "para todos", $APPDATA apunta a C:\ProgramData;
 ;   - si el instalador se abrio con la cuenta de otro administrador, $APPDATA es el de esa cuenta.
-; Por eso se pregunta a Windows de quien es el escritorio de esta sesion (el dueno de explorer.exe)
-; y se lee su AppData. Si eso falla, se usa el AppData de la cuenta que ejecuta el instalador.
+; Se pregunta a Windows, por su API y sin lanzar ningun programa, quien inicio esta sesion
+; (WTSQuerySessionInformation), se obtiene su identificador (SID) y se lee su AppData del registro
+; (HKEY_USERS\<SID>\Volatile Environment). Si algo falla, se usa el AppData de la cuenta que
+; ejecuta el instalador. Usa los registros $0 a $9.
 !macro VilcanetBuscarCfgDir
     StrCpy $VilcanetCfgDir ""
-    nsExec::ExecToStack '${VilcanetPowerShell} "&{ $$s = (Get-Process -Id $$PID).SessionId; $$p = Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $$_.SessionId -eq $$s } | Select-Object -First 1; if ($$p) { $$c = Get-CimInstance Win32_Process -Filter \"ProcessId=$$($$p.Id)\"; $$u = (Invoke-CimMethod -InputObject $$c -MethodName GetOwnerSid).Sid; $$a = (Get-ItemProperty \"Registry::HKEY_USERS\$$u\Volatile Environment\").APPDATA; [Console]::Out.Write($$a) } }"'
-    Pop $0
-    Pop $1
-    ${If} $0 == 0
-    ${AndIf} $1 != ""
-    ${AndIf} ${FileExists} "$1\*.*"
-        StrCpy $VilcanetCfgDir "$1\@{vilcanet_cfgdir}"
+    StrCpy $9 ""
+    ; 5 = WTSUserName, 7 = WTSDomainName; -1 = la sesion actual
+    System::Call 'wtsapi32::WTSQuerySessionInformationW(p 0, i -1, i 5, *p .r1, *i .r2) i .r0'
+    ${If} $0 != 0
+        System::Call 'kernel32::lstrcpynW(w .r3, p r1, i 256)'
+        System::Call 'wtsapi32::WTSFreeMemory(p r1)'
+        StrCpy $4 ""
+        System::Call 'wtsapi32::WTSQuerySessionInformationW(p 0, i -1, i 7, *p .r1, *i .r2) i .r0'
+        ${If} $0 != 0
+            System::Call 'kernel32::lstrcpynW(w .r4, p r1, i 256)'
+            System::Call 'wtsapi32::WTSFreeMemory(p r1)'
+        ${EndIf}
+        ${If} $4 != ""
+            StrCpy $3 "$4\$3"
+        ${EndIf}
+        ${If} $3 != ""
+            System::Alloc 256
+            Pop $5
+            System::Call 'advapi32::LookupAccountNameW(p 0, w r3, p r5, *i 256, w .r6, *i 1024, *i .r7) i .r0'
+            ${If} $0 != 0
+                System::Call 'advapi32::ConvertSidToStringSidW(p r5, *p .r8) i .r0'
+                ${If} $0 != 0
+                    System::Call 'kernel32::lstrcpynW(w .r7, p r8, i 256)'
+                    System::Call 'kernel32::LocalFree(p r8)'
+                    ReadRegStr $9 HKU "$7\Volatile Environment" "APPDATA"
+                ${EndIf}
+            ${EndIf}
+            System::Free $5
+        ${EndIf}
+    ${EndIf}
+    ClearErrors
+    ${If} $9 != ""
+    ${AndIf} ${FileExists} "$9\*.*"
+        StrCpy $VilcanetCfgDir "$9\@{vilcanet_cfgdir}"
     ${Else}
         SetShellVarContext current
         StrCpy $VilcanetCfgDir "$APPDATA\@{vilcanet_cfgdir}"
@@ -148,7 +181,27 @@ end_kill:
     ${EndIf}
 !macroend
 
-; Si el programa ya tenia un idioma elegido, ese es el que se propone en la pregunta.
+; Instalacion nueva = el programa no esta instalado (ni para todos ni para este usuario) y esta
+; persona no tiene todavia su archivo de configuracion.
+!macro VilcanetEsInstalacionNueva
+    StrCpy $VilcanetInstalacionNueva "1"
+    ClearErrors
+    ReadRegStr $0 HKLM "${uninstkey}" "UninstallString"
+    ${If} $0 != ""
+        StrCpy $VilcanetInstalacionNueva "0"
+    ${EndIf}
+    ReadRegStr $0 HKCU "${uninstkey}" "UninstallString"
+    ${If} $0 != ""
+        StrCpy $VilcanetInstalacionNueva "0"
+    ${EndIf}
+    ${If} ${FileExists} "$VilcanetCfgDir\@{vilcanet_cfgfile}"
+        StrCpy $VilcanetInstalacionNueva "0"
+    ${EndIf}
+    ClearErrors
+!macroend
+
+; En una actualizacion el instalador sale en el idioma que el programa tenga guardado;
+; si no tiene ninguno ("Automatico"), en el de Windows.
 !macro VilcanetIdiomaGuardado
     ClearErrors
     ReadINIStr $2 "$VilcanetCfgDir\@{vilcanet_cfgfile}" "General" "language"
@@ -161,9 +214,10 @@ end_kill:
     ClearErrors
 !macroend
 
-; Guarda el idioma elegido. En una instalacion silenciosa no se pregunta ni se guarda nada.
+; Guarda el idioma elegido: solo en instalacion nueva y no silenciosa.
 !macro VilcanetGuardarIdioma
     ${IfNot} ${Silent}
+    ${AndIf} $VilcanetInstalacionNueva == "1"
     ${AndIf} $VilcanetCfgDir != ""
         StrCpy $1 "es"
         ${If} $LANGUAGE == ${LANG_ENGLISH}
@@ -253,9 +307,9 @@ end_kill:
 
 !insertmacro MUI_RESERVEFILE_LANGDLL
 
-; Idioma: el instalador pregunta (Espanol / English). Sale preseleccionado el que el programa ya
-; tenia guardado; si no hay, el de Windows; y si Windows no esta en ninguno de los dos, espanol
-; (el primero de la lista). En una instalacion silenciosa no se pregunta.
+; Idioma: en una instalacion nueva el instalador pregunta (Espanol / English), con el de Windows
+; preseleccionado y espanol si Windows no esta en ninguno de los dos (es el primero de la lista).
+; En una actualizacion o en una instalacion silenciosa no se pregunta.
 ; Solo ASCII en este archivo: las letras con tilde van como ${U+xxxx}.
 LangString VN_ABIERTO ${LANG_SPANISH} "@{productname} est${U+00E1} abierto:$\n$\n$ProcessList$\nPulse $\"S${U+00ED}$\" para cerrarlo y continuar, $\"No$\" para volver a comprobar o $\"Cancelar$\" para salir."
 LangString VN_ABIERTO ${LANG_ENGLISH} "@{productname} is running:$\n$\n$ProcessList$\nPress $\"Yes$\" to close it and continue, $\"No$\" to check again or $\"Cancel$\" to quit."
@@ -280,8 +334,12 @@ SilentInstall normal
 Function .onInit
     !insertmacro MULTIUSER_INIT
     !insertmacro VilcanetBuscarCfgDir
-    !insertmacro VilcanetIdiomaGuardado
-    !insertmacro MUI_LANGDLL_DISPLAY
+    !insertmacro VilcanetEsInstalacionNueva
+    ${If} $VilcanetInstalacionNueva == "1"
+        !insertmacro MUI_LANGDLL_DISPLAY
+    ${Else}
+        !insertmacro VilcanetIdiomaGuardado
+    ${EndIf}
     !if "@{architecture}" == "x86_64"
         ${IfNot} ${RunningX64}
             MessageBox MB_OK|MB_ICONEXCLAMATION "$(VN_SOLO64)"
