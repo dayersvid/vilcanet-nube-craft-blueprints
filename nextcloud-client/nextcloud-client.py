@@ -106,6 +106,9 @@ class Package(CMakePackageBase):
         self.defines["vilcanet_dir"] = str(self.packageDir())
         # Nombre con el que el programa se anota en el inicio de Windows (APPLICATION_SHORTNAME)
         self.defines["vilcanet_shortname"] = "VilcanetNube"
+        # Carpeta y archivo de configuracion del programa dentro de %APPDATA% (idioma elegido en el instalador).
+        self.defines["vilcanet_cfgdir"] = "Vilcanet Nube"
+        self.defines["vilcanet_cfgfile"] = "vilcanet-nube.cfg"
         # Acceso directo del menu Inicio: Craft solo lo crea si se lo piden aqui
         # (applicationExecutable no lo usa el empaquetador NSIS)
         self.defines["shortcuts"] = [

@@ -88,6 +88,7 @@ Var StartMenuFolder
 !define VilcanetPowerShell "$WINDIR\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy ByPass -Command"
 
 Var ProcessList
+Var VilcanetCfgDir
 
 !macro VilcanetCerrarProcesos root
     nsExec::ExecToLog '${VilcanetPowerShell} "&{ Get-Process * | Where-Object { $$_.Path -Like (Join-Path \"${root}\" *) } |  %{ Write-Host \"cerrando\", $$_.Path; Stop-Process $$_ } }"'
@@ -120,6 +121,59 @@ end_kill:
 ; Extensiones del Explorador (NCOverlays.dll y NCContextMenu.dll).
 ; Las dos exportan DllRegisterServer: se registran con el regsvr32 de 64 bits.
 ; Escriben en HKLM y HKCR: solo se registran en la instalacion para todos los usuarios.
+
+; --- Idioma del programa -------------------------------------------------------------------------
+; El instalador pregunta el idioma y lo deja en el archivo de configuracion del programa
+; ([General] language), para que la primera pantalla ya salga en ese idioma.
+; Hay que escribir en el perfil de la persona que esta sentada al PC, y no vale $APPDATA a secas:
+;   - instalando "para todos", $APPDATA apunta a C:\ProgramData;
+;   - si el instalador se abrio con la cuenta de otro administrador, $APPDATA es el de esa cuenta.
+; Por eso se pregunta a Windows de quien es el escritorio de esta sesion (el dueno de explorer.exe)
+; y se lee su AppData. Si eso falla, se usa el AppData de la cuenta que ejecuta el instalador.
+!macro VilcanetBuscarCfgDir
+    StrCpy $VilcanetCfgDir ""
+    nsExec::ExecToStack '${VilcanetPowerShell} "&{ $$s = (Get-Process -Id $$PID).SessionId; $$p = Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $$_.SessionId -eq $$s } | Select-Object -First 1; if ($$p) { $$c = Get-CimInstance Win32_Process -Filter \"ProcessId=$$($$p.Id)\"; $$u = (Invoke-CimMethod -InputObject $$c -MethodName GetOwnerSid).Sid; $$a = (Get-ItemProperty \"Registry::HKEY_USERS\$$u\Volatile Environment\").APPDATA; [Console]::Out.Write($$a) } }"'
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+    ${AndIf} $1 != ""
+    ${AndIf} ${FileExists} "$1\*.*"
+        StrCpy $VilcanetCfgDir "$1\@{vilcanet_cfgdir}"
+    ${Else}
+        SetShellVarContext current
+        StrCpy $VilcanetCfgDir "$APPDATA\@{vilcanet_cfgdir}"
+        ${If} $MultiUser.InstallMode == "AllUsers"
+            SetShellVarContext all
+        ${EndIf}
+    ${EndIf}
+!macroend
+
+; Si el programa ya tenia un idioma elegido, ese es el que se propone en la pregunta.
+!macro VilcanetIdiomaGuardado
+    ClearErrors
+    ReadINIStr $2 "$VilcanetCfgDir\@{vilcanet_cfgfile}" "General" "language"
+    StrCpy $3 $2 2
+    ${If} $3 == "en"
+        StrCpy $LANGUAGE ${LANG_ENGLISH}
+    ${ElseIf} $3 == "es"
+        StrCpy $LANGUAGE ${LANG_SPANISH}
+    ${EndIf}
+    ClearErrors
+!macroend
+
+; Guarda el idioma elegido. En una instalacion silenciosa no se pregunta ni se guarda nada.
+!macro VilcanetGuardarIdioma
+    ${IfNot} ${Silent}
+    ${AndIf} $VilcanetCfgDir != ""
+        StrCpy $1 "es"
+        ${If} $LANGUAGE == ${LANG_ENGLISH}
+            StrCpy $1 "en"
+        ${EndIf}
+        CreateDirectory "$VilcanetCfgDir"
+        WriteINIStr "$VilcanetCfgDir\@{vilcanet_cfgfile}" "General" "language" "$1"
+        DetailPrint "$(VN_IDIOMA): $1"
+    ${EndIf}
+!macroend
 
 !define VilcanetRegsvr "$WINDIR\sysnative\regsvr32.exe"
 
@@ -189,19 +243,26 @@ end_kill:
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !define MUI_FINISHPAGE_LINK "$(VN_SITIO)"
+!define MUI_LANGDLL_WINDOWTITLE "@{productname}"
+!define MUI_LANGDLL_INFO "Elija el idioma / Choose the language"
 !define MUI_FINISHPAGE_LINK_LOCATION "@{website}"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "Spanish"
 !insertmacro MUI_LANGUAGE "English"
 
-; Idioma: el de Windows si es espanol o ingles; cualquier otro, espanol (el primero de la lista).
-; No se llama a MUI_LANGDLL_DISPLAY: el instalador no pregunta el idioma.
+!insertmacro MUI_RESERVEFILE_LANGDLL
+
+; Idioma: el instalador pregunta (Espanol / English). Sale preseleccionado el que el programa ya
+; tenia guardado; si no hay, el de Windows; y si Windows no esta en ninguno de los dos, espanol
+; (el primero de la lista). En una instalacion silenciosa no se pregunta.
 ; Solo ASCII en este archivo: las letras con tilde van como ${U+xxxx}.
 LangString VN_ABIERTO ${LANG_SPANISH} "@{productname} est${U+00E1} abierto:$\n$\n$ProcessList$\nPulse $\"S${U+00ED}$\" para cerrarlo y continuar, $\"No$\" para volver a comprobar o $\"Cancelar$\" para salir."
 LangString VN_ABIERTO ${LANG_ENGLISH} "@{productname} is running:$\n$\n$ProcessList$\nPress $\"Yes$\" to close it and continue, $\"No$\" to check again or $\"Cancel$\" to quit."
 LangString VN_EXTENSION ${LANG_SPANISH} "Extensi${U+00F3}n del Explorador"
 LangString VN_EXTENSION ${LANG_ENGLISH} "Explorer extension"
+LangString VN_IDIOMA ${LANG_SPANISH} "Idioma del programa"
+LangString VN_IDIOMA ${LANG_ENGLISH} "Program language"
 LangString VN_SITIO ${LANG_SPANISH} "Visitar el sitio de Vilcanet"
 LangString VN_SITIO ${LANG_ENGLISH} "Visit the Vilcanet website"
 LangString VN_SOLO64 ${LANG_SPANISH} "Este instalador solo funciona en Windows de 64 bits."
@@ -218,6 +279,9 @@ SilentInstall normal
 
 Function .onInit
     !insertmacro MULTIUSER_INIT
+    !insertmacro VilcanetBuscarCfgDir
+    !insertmacro VilcanetIdiomaGuardado
+    !insertmacro MUI_LANGDLL_DISPLAY
     !if "@{architecture}" == "x86_64"
         ${IfNot} ${RunningX64}
             MessageBox MB_OK|MB_ICONEXCLAMATION "$(VN_SOLO64)"
@@ -280,6 +344,8 @@ WriteUninstaller "uninstall.exe"
   ${Else}
     DetailPrint "$(VN_SOLOUSUARIO)"
   ${EndIf}
+
+  !insertmacro VilcanetGuardarIdioma
 
 SectionEnd
 
