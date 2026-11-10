@@ -71,6 +71,11 @@ class Package(CMakePackageBase):
 
         self.subinfo.options.configure.args += [f"-DMIRALL_VERSION_SUFFIX={versionSuffix}"]
 
+        # Contador de compilaciones propio (1 a 65535: limite de Windows por cada parte de la version)
+        build = os.environ.get("VILCANET_BUILD", "")
+        if build.isdigit() and 1 <= int(build) <= 65535:
+            self.subinfo.options.configure.args += [f"-DMIRALL_VERSION_BUILD={build}"]
+
         if CraftCore.compiler.isMacOS:
             osxArchs = self.subinfo.options.dynamic.osxArchs
             buildAppBundle = boolToCmakeBool(self.subinfo.options.dynamic.buildMacOSBundle)
