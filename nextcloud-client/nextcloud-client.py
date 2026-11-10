@@ -18,11 +18,11 @@ class subinfo(info.infoclass):
             self.options.dynamic.registerOption("forceOverrideServerUrl", False)
 
     def setTargets(self):
-        self.svnTargets["master"] = "[git]https://github.com/nextcloud/desktop"
+        self.svnTargets["master"] = "[git]https://github.com/dayersvid/vilcanet-nube-desktop"
 
-        self.description = "Nextcloud Desktop Client"
-        self.displayName = "Nextcloud"
-        self.webpage = "https://nextcloud.com"
+        self.description = "Vilcanet Nube"
+        self.displayName = "Vilcanet Nube"
+        self.webpage = "https://vilcanet.com.ec"
 
         self.defaultTarget = "master"
 
@@ -83,9 +83,10 @@ class Package(CMakePackageBase):
 
     def createPackage(self):
         self.blacklist_file.append(os.path.join(self.packageDir(), 'blacklist.txt'))
-        self.defines["appname"] = "nextcloud"
-        self.defines["company"] = "Nextcloud GmbH"
-        self.applicationExecutable = "nextcloud"
+        self.defines["appname"] = "vilcanet-nube"
+        self.defines["productname"] = "Vilcanet Nube"
+        self.defines["company"] = "Vilcanet"
+        self.applicationExecutable = "vilcanet-nube"
 
         self.ignoredPackages += ["binary/mysql"]
         if not CraftCore.compiler.isLinux:
