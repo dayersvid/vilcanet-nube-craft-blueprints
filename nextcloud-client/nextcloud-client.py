@@ -101,6 +101,22 @@ class Package(CMakePackageBase):
         if version:
             self.defines["version"] = version
 
+        # Plantilla propia del instalador: en espanol, con la marca y con las extensiones del Explorador
+        self.scriptname = os.path.join(self.packageDir(), "vilcanet-nube.nsi")
+        self.defines["vilcanet_dir"] = str(self.packageDir())
+        # Nombre con el que el programa se anota en el inicio de Windows (APPLICATION_SHORTNAME)
+        self.defines["vilcanet_shortname"] = "VilcanetNube"
+        # Acceso directo del menu Inicio: Craft solo lo crea si se lo piden aqui
+        # (applicationExecutable no lo usa el empaquetador NSIS)
+        self.defines["shortcuts"] = [
+            {
+                "name": "Vilcanet Nube",
+                "target": "bin/vilcanet-nube.exe",
+                "description": "Vilcanet Nube",
+                "workingDirectory": "$INSTDIR\\bin",
+            }
+        ]
+
         self.ignoredPackages += ["binary/mysql"]
         if not CraftCore.compiler.isLinux:
             self.ignoredPackages += ["libs/dbus"]
