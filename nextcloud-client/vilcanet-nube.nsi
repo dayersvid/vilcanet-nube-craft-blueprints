@@ -107,7 +107,7 @@ Goto end_kill
 retry_kill:
     !insertmacro VilcanetListarProcesos "$INSTDIR"
     ${If} $ProcessList != ""
-        MessageBox MB_YESNOCANCEL "@{productname} est${U+00E1} abierto:$\n$\n$ProcessList$\nPulse $\"S${U+00ED}$\" para cerrarlo y continuar, $\"No$\" para volver a comprobar o $\"Cancelar$\" para salir." /SD IDYES IDNO retry_kill IDCANCEL abort_kill
+        MessageBox MB_YESNOCANCEL "$(VN_ABIERTO)" /SD IDYES IDNO retry_kill IDCANCEL abort_kill
         !insertmacro VilcanetCerrarProcesos "$INSTDIR"
         Goto retry_kill
         abort_kill:
@@ -127,7 +127,7 @@ end_kill:
     ${If} ${FileExists} "$INSTDIR\bin\${archivo}"
         nsExec::ExecToLog '"${VilcanetRegsvr}" /s "$INSTDIR\bin\${archivo}"'
         Pop $0
-        DetailPrint "Extensi${U+00F3}n del Explorador ${archivo}: resultado $0"
+        DetailPrint "$(VN_EXTENSION) ${archivo}: $0"
     ${EndIf}
 !macroend
 
@@ -188,11 +188,28 @@ end_kill:
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
-!define MUI_FINISHPAGE_LINK "Visitar el sitio de Vilcanet"
+!define MUI_FINISHPAGE_LINK "$(VN_SITIO)"
 !define MUI_FINISHPAGE_LINK_LOCATION "@{website}"
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "Spanish"
+!insertmacro MUI_LANGUAGE "English"
+
+; Idioma: el de Windows si es espanol o ingles; cualquier otro, espanol (el primero de la lista).
+; No se llama a MUI_LANGDLL_DISPLAY: el instalador no pregunta el idioma.
+; Solo ASCII en este archivo: las letras con tilde van como ${U+xxxx}.
+LangString VN_ABIERTO ${LANG_SPANISH} "@{productname} est${U+00E1} abierto:$\n$\n$ProcessList$\nPulse $\"S${U+00ED}$\" para cerrarlo y continuar, $\"No$\" para volver a comprobar o $\"Cancelar$\" para salir."
+LangString VN_ABIERTO ${LANG_ENGLISH} "@{productname} is running:$\n$\n$ProcessList$\nPress $\"Yes$\" to close it and continue, $\"No$\" to check again or $\"Cancel$\" to quit."
+LangString VN_EXTENSION ${LANG_SPANISH} "Extensi${U+00F3}n del Explorador"
+LangString VN_EXTENSION ${LANG_ENGLISH} "Explorer extension"
+LangString VN_SITIO ${LANG_SPANISH} "Visitar el sitio de Vilcanet"
+LangString VN_SITIO ${LANG_ENGLISH} "Visit the Vilcanet website"
+LangString VN_SOLO64 ${LANG_SPANISH} "Este instalador solo funciona en Windows de 64 bits."
+LangString VN_SOLO64 ${LANG_ENGLISH} "This installer only works on 64-bit Windows."
+LangString VN_SOLOUSUARIO ${LANG_SPANISH} "Instalaci${U+00F3}n solo para este usuario: sin iconos de estado ni men${U+00FA} en el Explorador."
+LangString VN_SOLOUSUARIO ${LANG_ENGLISH} "Installed for this user only: no status icons or Explorer menu."
+LangString VN_DESINSTALAR ${LANG_SPANISH} "Se va a desinstalar @{productname} de este equipo. Los archivos de su carpeta sincronizada no se borran."
+LangString VN_DESINSTALAR ${LANG_ENGLISH} "@{productname} will be removed from this computer. The files in your synchronized folder are not deleted."
 
 SetDateSave on
 SetDatablockOptimize on
@@ -203,7 +220,7 @@ Function .onInit
     !insertmacro MULTIUSER_INIT
     !if "@{architecture}" == "x86_64"
         ${IfNot} ${RunningX64}
-            MessageBox MB_OK|MB_ICONEXCLAMATION "Este instalador solo funciona en Windows de 64 bits."
+            MessageBox MB_OK|MB_ICONEXCLAMATION "$(VN_SOLO64)"
             Abort
         ${EndIf}
     !endif
@@ -261,7 +278,7 @@ WriteUninstaller "uninstall.exe"
     !insertmacro VilcanetRegistrarExtension "NCOverlays.dll"
     !insertmacro VilcanetRegistrarExtension "NCContextMenu.dll"
   ${Else}
-    DetailPrint "Instalaci${U+00F3}n solo para este usuario: sin iconos de estado ni men${U+00FA} en el Explorador."
+    DetailPrint "$(VN_SOLOUSUARIO)"
   ${EndIf}
 
 SectionEnd
@@ -276,7 +293,7 @@ SectionEnd
 ; Uninstaller
 ; All section names prefixed by "Un" will be in the uninstaller
 
-UninstallText "Se va a desinstalar @{productname} de este equipo. Los archivos de su carpeta sincronizada no se borran."
+UninstallText "$(VN_DESINSTALAR)"
 
 Section "Uninstall"
 !insertmacro VilcanetCerrarConAviso
