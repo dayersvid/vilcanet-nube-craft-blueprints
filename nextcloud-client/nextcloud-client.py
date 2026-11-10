@@ -89,6 +89,12 @@ class Package(CMakePackageBase):
         self.defines["productname"] = "Vilcanet Nube"
         self.defines["company"] = "Vilcanet"
         self.applicationExecutable = "vilcanet-nube"
+        # Icono propio del instalador y de «Aplicaciones» (por defecto Craft pone el suyo)
+        self.defines["icon"] = os.path.join(self.packageDir(), "vilcanet-nube.ico")
+        # Version visible en «Aplicaciones»: la pasa el flujo de compilacion
+        version = os.environ.get("VILCANET_VERSION", "")
+        if version:
+            self.defines["version"] = version
 
         self.ignoredPackages += ["binary/mysql"]
         if not CraftCore.compiler.isLinux:
