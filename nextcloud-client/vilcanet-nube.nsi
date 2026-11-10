@@ -89,7 +89,6 @@ Var StartMenuFolder
 
 Var ProcessList
 Var VilcanetCfgDir
-Var VilcanetInstalacionNueva
 
 !macro VilcanetCerrarProcesos root
     nsExec::ExecToLog '${VilcanetPowerShell} "&{ Get-Process * | Where-Object { $$_.Path -Like (Join-Path \"${root}\" *) } |  %{ Write-Host \"cerrando\", $$_.Path; Stop-Process $$_ } }"'
@@ -124,10 +123,9 @@ end_kill:
 ; Escriben en HKLM y HKCR: solo se registran en la instalacion para todos los usuarios.
 
 ; --- Idioma del programa -------------------------------------------------------------------------
-; Solo en una instalacion NUEVA el instalador pregunta el idioma y lo deja en el archivo de
-; configuracion del programa ([General] language), para que la primera pantalla ya salga en ese
-; idioma. En una actualizacion no pregunta ni escribe: se respeta lo que la persona tenga elegido,
-; tambien "Automatico" (sin clave language).
+; El instalador pregunta SIEMPRE el idioma al empezar, tambien al actualizar, y deja lo elegido en
+; el archivo de configuracion del programa ([General] language), para que la primera pantalla ya
+; salga en ese idioma. Propone el idioma guardado; si no hay, el de Windows; si no, espanol.
 ;
 ; Hay que mirar el perfil de la persona que esta sentada al PC, y no vale $APPDATA a secas:
 ;   - instalando "para todos", $APPDATA apunta a C:\ProgramData;
@@ -181,27 +179,8 @@ end_kill:
     ${EndIf}
 !macroend
 
-; Instalacion nueva = el programa no esta instalado (ni para todos ni para este usuario) y esta
-; persona no tiene todavia su archivo de configuracion.
-!macro VilcanetEsInstalacionNueva
-    StrCpy $VilcanetInstalacionNueva "1"
-    ClearErrors
-    ReadRegStr $0 HKLM "${uninstkey}" "UninstallString"
-    ${If} $0 != ""
-        StrCpy $VilcanetInstalacionNueva "0"
-    ${EndIf}
-    ReadRegStr $0 HKCU "${uninstkey}" "UninstallString"
-    ${If} $0 != ""
-        StrCpy $VilcanetInstalacionNueva "0"
-    ${EndIf}
-    ${If} ${FileExists} "$VilcanetCfgDir\@{vilcanet_cfgfile}"
-        StrCpy $VilcanetInstalacionNueva "0"
-    ${EndIf}
-    ClearErrors
-!macroend
-
-; En una actualizacion el instalador sale en el idioma que el programa tenga guardado;
-; si no tiene ninguno ("Automatico"), en el de Windows.
+; El idioma que el programa tenga guardado es el que se propone en la pregunta; si no tiene
+; ninguno ("Automatico" o instalacion nueva), queda el de Windows.
 !macro VilcanetIdiomaGuardado
     ClearErrors
     ReadINIStr $2 "$VilcanetCfgDir\@{vilcanet_cfgfile}" "General" "language"
@@ -214,10 +193,9 @@ end_kill:
     ClearErrors
 !macroend
 
-; Guarda el idioma elegido: solo en instalacion nueva y no silenciosa.
+; Guarda el idioma elegido. En una instalacion silenciosa no se pregunta ni se guarda nada.
 !macro VilcanetGuardarIdioma
     ${IfNot} ${Silent}
-    ${AndIf} $VilcanetInstalacionNueva == "1"
     ${AndIf} $VilcanetCfgDir != ""
         StrCpy $1 "es"
         ${If} $LANGUAGE == ${LANG_ENGLISH}
@@ -307,9 +285,9 @@ end_kill:
 
 !insertmacro MUI_RESERVEFILE_LANGDLL
 
-; Idioma: en una instalacion nueva el instalador pregunta (Espanol / English), con el de Windows
-; preseleccionado y espanol si Windows no esta en ninguno de los dos (es el primero de la lista).
-; En una actualizacion o en una instalacion silenciosa no se pregunta.
+; Idioma: el instalador pregunta siempre (Espanol / English). Sale preseleccionado el que el
+; programa ya tenia guardado; si no hay, el de Windows; y si Windows no esta en ninguno de los
+; dos, espanol (el primero de la lista). En una instalacion silenciosa no se pregunta.
 ; Solo ASCII en este archivo: las letras con tilde van como ${U+xxxx}.
 LangString VN_ABIERTO ${LANG_SPANISH} "@{productname} est${U+00E1} abierto:$\n$\n$ProcessList$\nPulse $\"S${U+00ED}$\" para cerrarlo y continuar, $\"No$\" para volver a comprobar o $\"Cancelar$\" para salir."
 LangString VN_ABIERTO ${LANG_ENGLISH} "@{productname} is running:$\n$\n$ProcessList$\nPress $\"Yes$\" to close it and continue, $\"No$\" to check again or $\"Cancel$\" to quit."
@@ -334,12 +312,8 @@ SilentInstall normal
 Function .onInit
     !insertmacro MULTIUSER_INIT
     !insertmacro VilcanetBuscarCfgDir
-    !insertmacro VilcanetEsInstalacionNueva
-    ${If} $VilcanetInstalacionNueva == "1"
-        !insertmacro MUI_LANGDLL_DISPLAY
-    ${Else}
-        !insertmacro VilcanetIdiomaGuardado
-    ${EndIf}
+    !insertmacro VilcanetIdiomaGuardado
+    !insertmacro MUI_LANGDLL_DISPLAY
     !if "@{architecture}" == "x86_64"
         ${IfNot} ${RunningX64}
             MessageBox MB_OK|MB_ICONEXCLAMATION "$(VN_SOLO64)"
